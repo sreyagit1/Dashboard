@@ -5,207 +5,195 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
-# -------------------------------
+# --------------------------------------------------
 # Page Setup
-# -------------------------------
-st.set_page_config(page_title="GenAI Explainability Dashboard", layout="wide")
-st.title("🤖📊 GenAI Explainability Dashboard")
-st.caption("Powered by google/flan-t5-small — Real Generative AI + Smart Rule-Based Insights")
+# --------------------------------------------------
+st.set_page_config(page_title="GenAI Explainable Dashboard", layout="wide")
+st.title("🤖📊 GenAI Explainable Dashboard")
+st.caption("Hybrid System: Rule-based Analysis + FLAN-T5 Paraphrasing (Safe & Smart GenAI)")
 
-# -------------------------------
-# Load FLAN-T5 Small (Generative AI)
-# -------------------------------
+# --------------------------------------------------
+# Load FLAN-T5 Small (Paraphrasing Mode)
+# --------------------------------------------------
 @st.cache_resource
 def load_llm():
     try:
         model_name = "google/flan-t5-small"
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-        gen = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
-        return gen
+        generator = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
+        return generator
     except Exception as e:
-        st.error(f"Failed to load GenAI model: {e}")
+        st.error(f"Error loading FLAN: {e}")
         return None
 
 llm = load_llm()
 
-# -------------------------------
-# Rule-Based Dataset Insights
-# -------------------------------
-def generate_basic_statistics(df):
-    lines = []
-    lines.append(f"The dataset has **{df.shape[0]} rows** and **{df.shape[1]} columns**.")
+# --------------------------------------------------
+# RULE-BASED LOGIC (SAFE, ACCURATE)
+# --------------------------------------------------
 
-    missing = df.isnull().sum().sum()
-    if missing > 0:
-        lines.append(f"There are **{missing} missing values**.")
-    else:
-        lines.append("There are **no missing values**.")
+def explain_histogram(col, s):
+    s = s.dropna()
+    mean = s.mean()
+    median = s.median()
+    skew = s.skew()
+    std = s.std()
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if numeric_cols:
-        desc = df[numeric_cols].describe()
-        for col in numeric_cols:
-            mean = desc.loc["mean", col]
-            std = desc.loc["std", col]
-            lines.append(f"- `{col}` → mean: {mean:.2f}, std: {std:.2f}")
-    else:
-        lines.append("No numeric columns found.")
-
-    return "\n".join(lines)
+    text = (
+        f"The histogram for column '{col}' shows the distribution of values. "
+        f"The mean is {mean:.2f}, while the median is {median:.2f}. "
+        f"The skewness is {skew:.2f}, which indicates whether the distribution "
+        f"is symmetric or tilted to one side. The standard deviation is {std:.2f}, "
+        f"showing how spread out the values are."
+    )
+    return text
 
 
-# -------------------------------
+def explain_pie(col, s):
+    vc = s.value_counts()
+    top = vc.index[0]
+    pct = (vc.iloc[0] / len(s)) * 100
+
+    text = (
+        f"The pie chart for '{col}' shows category distribution. "
+        f"The most common value is '{top}' appearing in {pct:.1f}% of rows. "
+        f"Other categories have lower proportions."
+    )
+    return text
+
+
+def explain_scatter(x, y, df):
+    corr = df[x].corr(df[y])
+
+    text = (
+        f"The scatter plot between '{x}' and '{y}' shows how the two variables relate. "
+        f"The correlation value is {corr:.2f}. "
+        f"A positive correlation means both values increase together, "
+        f"while a negative value means one increases as the other decreases."
+    )
+    return text
+
+
+def explain_heatmap(df, numeric_cols):
+    corr = df[numeric_cols].corr()
+    strongest = corr.unstack().sort_values(ascending=False).drop_duplicates().iloc[1]
+    text = (
+        "The heatmap shows correlations between numeric features. "
+        f"The strongest relationship has a correlation value of {strongest:.2f}. "
+        f"High positive values mean two variables move together, while negative values "
+        f"mean they move in opposite directions."
+    )
+    return text
+
+
+def rewrite_with_genai(text):
+    """ FLAN only rewrites existing explanation — not analyzing numbers. """
+    if llm is None:
+        return text
+
+    prompt = (
+        "Rewrite this explanation in simple, clear English without adding new details. "
+        "Do NOT generate numbers or complex interpretations.\n\n"
+        f"{text}"
+    )
+
+    result = llm(prompt, max_length=150)
+    return result[0]["generated_text"]
+
+
+# --------------------------------------------------
 # File Upload
-# -------------------------------
+# --------------------------------------------------
 uploaded_file = st.file_uploader("📂 Upload a CSV file", type=["csv"])
 if uploaded_file is not None:
+
     df = pd.read_csv(uploaded_file)
     st.success("File uploaded successfully!")
-
-    st.subheader("📄 Dataset Preview")
     st.dataframe(df.head())
 
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     categorical_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
 
-    # -------------------------------
-    # Basic Rule-Based Insights
-    # -------------------------------
-    st.subheader("⚙️ Rule-Based Insights")
-    with st.expander("Show Insights"):
-        stats_text = generate_basic_statistics(df)
-        st.markdown(stats_text)
+    # --------------------------------------------------
+    # PLOTS + EXPLANATION
+    # --------------------------------------------------
+    st.subheader("📊 Visual Analysis + GenAI Explanation")
 
-        if st.button("Explain Dataset Using GenAI"):
-            if llm:
-                prompt = (
-                    f"Explain this dataset in simple terms:\n\n"
-                    f"{stats_text}\n\n"
-                    f"Sample rows:\n{df.head(3).to_string()}"
-                )
-                result = llm(prompt, max_length=200)
-                st.markdown("### 🤖 GenAI Summary")
-                st.write(result[0]["generated_text"])
-
-    # -------------------------------
-    # Visualizations + GenAI Explainability
-    # -------------------------------
-    st.subheader("📊 Visual Analysis + GenAI Explainability")
-
-    plot_type = st.selectbox(
-        "Choose a plot type:",
+    plot = st.selectbox(
+        "Choose a plot:",
         ["Histogram", "Pie Chart", "Scatter Plot", "Correlation Heatmap"]
     )
 
     # ---------------- HISTOGRAM ----------------
-    if plot_type == "Histogram":
-        if numeric_cols:
-            col = st.selectbox("Select numeric column:", numeric_cols)
-            fig, ax = plt.subplots()
-            ax.hist(df[col], bins=20)
-            ax.set_title(f"Histogram of {col}")
-            st.pyplot(fig)
+    if plot == "Histogram" and numeric_cols:
 
-            if st.button("Explain Histogram (GenAI)"):
-                summary = (
-                    f"The histogram shows the distribution of column {col}. "
-                    f"Mean = {df[col].mean():.2f}, Median = {df[col].median():.2f}, "
-                    f"Std = {df[col].std():.2f}."
-                )
-                prompt = (
-                    f"Explain this histogram to a beginner:\n{summary}\n"
-                    f"Describe shape, skewness, and what it means."
-                )
-                result = llm(prompt, max_length=180)
-                st.markdown("### 🤖 GenAI Explanation")
-                st.write(result[0]["generated_text"])
-        else:
-            st.warning("No numeric columns found.")
+        col = st.selectbox("Select numeric column:", numeric_cols)
+        fig, ax = plt.subplots()
+        ax.hist(df[col], bins=20)
+        ax.set_title(f"Histogram of {col}")
+        st.pyplot(fig)
+
+        rule_text = explain_histogram(col, df[col])
+        st.markdown("### Rule-Based Explanation")
+        st.write(rule_text)
+
+        if st.button("Rewrite with GenAI"):
+            gen_text = rewrite_with_genai(rule_text)
+            st.markdown("### 🤖 GenAI Explanation")
+            st.write(gen_text)
 
     # ---------------- PIE CHART ----------------
-    elif plot_type == "Pie Chart":
-        if categorical_cols:
-            col = st.selectbox("Select categorical column:", categorical_cols)
-            fig, ax = plt.subplots()
-            df[col].value_counts().plot.pie(autopct="%1.1f%%")
-            ax.set_title(f"Pie Chart of {col}")
-            ax.set_ylabel("")
-            st.pyplot(fig)
+    elif plot == "Pie Chart" and categorical_cols:
 
-            if st.button("Explain Pie Chart (GenAI)"):
-                value_counts = df[col].value_counts()
-                summary = f"Top categories: {value_counts.head(3).to_dict()}"
-                prompt = f"Explain this pie chart in simple English:\n{summary}"
-                result = llm(prompt, max_length=150)
-                st.markdown("### 🤖 GenAI Explanation")
-                st.write(result[0]["generated_text"])
-        else:
-            st.warning("No categorical columns found.")
+        col = st.selectbox("Select categorical column:", categorical_cols)
+        fig, ax = plt.subplots()
+        df[col].value_counts().plot.pie(autopct="%1.1f%%")
+        ax.set_title(f"Pie Chart of {col}")
+        ax.set_ylabel("")
+        st.pyplot(fig)
+
+        rule_text = explain_pie(col, df[col])
+        st.markdown("### Rule-Based Explanation")
+        st.write(rule_text)
+
+        if st.button("Rewrite with GenAI"):
+            st.markdown("### 🤖 GenAI Explanation")
+            st.write(rewrite_with_genai(rule_text))
 
     # ---------------- SCATTER PLOT ----------------
-    elif plot_type == "Scatter Plot":
-        if len(numeric_cols) >= 2:
-            x = st.selectbox("X-axis:", numeric_cols)
-            y = st.selectbox("Y-axis:", numeric_cols)
-            fig, ax = plt.subplots()
-            ax.scatter(df[x], df[y])
-            ax.set_title(f"{x} vs {y}")
-            st.pyplot(fig)
+    elif plot == "Scatter Plot" and len(numeric_cols) >= 2:
 
-            if st.button("Explain Scatter Plot (GenAI)"):
-                corr = df[x].corr(df[y])
-                summary = f"Scatter plot of {x} vs {y}. Correlation = {corr:.2f}."
-                prompt = (
-                    f"Explain this scatter plot in simple terms: {summary}. "
-                    f"What does the relationship mean?"
-                )
-                result = llm(prompt, max_length=180)
-                st.markdown("### 🤖 GenAI Explanation")
-                st.write(result[0]["generated_text"])
-        else:
-            st.warning("Need at least 2 numeric columns.")
+        x = st.selectbox("X-axis:", numeric_cols)
+        y = st.selectbox("Y-axis:", numeric_cols)
+        fig, ax = plt.subplots()
+        ax.scatter(df[x], df[y])
+        ax.set_title(f"{x} vs {y}")
+        st.pyplot(fig)
+
+        rule_text = explain_scatter(x, y, df)
+        st.markdown("### Rule-Based Explanation")
+        st.write(rule_text)
+
+        if st.button("Rewrite with GenAI"):
+            st.markdown("### 🤖 GenAI Explanation")
+            st.write(rewrite_with_genai(rule_text))
 
     # ---------------- HEATMAP ----------------
-    elif plot_type == "Correlation Heatmap":
-        if len(numeric_cols) > 1:
-            fig, ax = plt.subplots()
-            corr = df[numeric_cols].corr()
-            sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f")
-            ax.set_title("Correlation Heatmap")
-            st.pyplot(fig)
+    elif plot == "Correlation Heatmap" and len(numeric_cols) > 1:
 
-            if st.button("Explain Heatmap (GenAI)"):
-                top_pair = corr.abs().unstack().sort_values(ascending=False)[1]
-                summary = f"Most correlated pair has correlation {top_pair:.2f}."
-                prompt = (
-                    f"Explain what this correlation heatmap means. "
-                    f"Explain strong, weak, and negative correlations simply. "
-                    f"Also explain this: {summary}"
-                )
-                result = llm(prompt, max_length=200)
-                st.markdown("### 🤖 GenAI Explanation")
-                st.write(result[0]["generated_text"])
-        else:
-            st.warning("Not enough numeric columns for heatmap.")
+        fig, ax = plt.subplots(figsize=(8, 5))
+        sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm")
+        ax.set_title("Correlation Heatmap")
+        st.pyplot(fig)
 
-    # -------------------------------
-    # GenAI Report Generator
-    # -------------------------------
-    st.subheader("📘 GenAI Report Generator")
-    if st.button("Generate Full Report (GenAI)"):
-        stats_text = df.describe(include='all').to_string()
-        sample = df.head(5).to_string()
+        rule_text = explain_heatmap(df, numeric_cols)
+        st.markdown("### Rule-Based Explanation")
+        st.write(rule_text)
 
-        prompt = (
-            "Create a clear, professional report from this dataset.\n"
-            "Explain:\n- key patterns\n- correlations\n- trends\n- risks\n- recommendations\n\n"
-            f"Statistics:\n{stats_text}\n\nSample:\n{sample}"
-        )
-
-        result = llm(prompt, max_length=350)
-        st.markdown("### 📘 AI-Generated Report")
-        st.write(result[0]["generated_text"])
+        if st.button("Rewrite with GenAI"):
+            st.markdown("### 🤖 GenAI Explanation")
+            st.write(rewrite_with_genai(rule_text))
 
 else:
-    st.warning("Upload a CSV file to begin!")
+    st.info("Upload a CSV file to begin.")
