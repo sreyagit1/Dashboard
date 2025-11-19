@@ -3,7 +3,6 @@ pandas
 numpy
 matplotlib
 seaborn
-transformers
-torch
-sentencepiece
 scikit-learn
+google-generativeai
+sqlite3
