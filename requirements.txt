@@ -6,3 +6,4 @@ seaborn
 transformers
 torch
 sentencepiece
+scikit-learn
