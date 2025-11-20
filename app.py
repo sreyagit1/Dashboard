@@ -123,35 +123,34 @@ with st.spinner("Generating friendly insights..."):
 You are a helpful data assistant. Explain this dataset in very simple English so anyone can understand.
 
 Rules:
-- Do NOT copy exact numbers.
-- Do NOT repeat the sample rows.
+- Do NOT copy numbers.
+- Do NOT repeat sample rows.
 - No technical jargon.
-- Short, clear sentences.
-- Focus on general patterns, not stats.
-- If unsure, skip it.
+- Very short sentences.
+- Focus only on common patterns.
 
 Format:
-1. One-sentence simple summary.
-2. 3–6 bullet points with easy insights.
-3. One short caution about the data.
+1. One-sentence summary.
+2. 3–6 simple bullet points.
+3. One short caution.
 
 Here is a small sample of the dataset:
 {sample}
 """
 
     response = client.chat.completions.create(
-    model="llama-3.1-8b-instant",
-    messages=[
-        {"role": "system", "content": "You explain things in simple English."},
-        {"role": "user", "content": prompt}
-    ],
-    max_tokens=250,
-    temperature=0.4
-
-
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": "You explain things in simple English."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=250,
+        temperature=0.4
     )
 
-    output = response.choices[0].message["content"]
+    # CHANGED THIS LINE — correct for Groq
+    output = response.choices[0].message.content
 
 st.markdown("### 🤖 Insights")
 st.write(output)
+
