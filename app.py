@@ -239,34 +239,54 @@ elif plot_type == "Correlation Heatmap":
 
 
 def summarize_dataframe_for_ai(df):
-    summary = []
+    summary_lines = []
 
-    summary.append(f"The dataset has {df.shape[0]} rows and {df.shape[1]} columns.")
+    # Basic shape
+    summary_lines.append(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
 
-    # Column names
-    summary.append("Columns: " + ", ".join(df.columns))
+    # Column overview
+    summary_lines.append("\nColumn Overview:")
+    for col in df.columns:
+        summary_lines.append(f"- {col} ({df[col].dtype})")
 
-    # Types
-    types = df.dtypes.astype(str).to_dict()
-    type_summary = ", ".join([f"{col} ({types[col]})" for col in df.columns])
-    summary.append("Column types: " + type_summary)
+    # Missing values
+    missing = df.isnull().sum()
+    summary_lines.append("\nMissing Values:")
+    for col in df.columns:
+        summary_lines.append(f"- {col}: {missing[col]} missing")
 
-    # Simple numeric stats
-    num_cols = df.select_dtypes(include=[np.number]).columns
-    if len(num_cols) > 0:
+    # Numeric summaries
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if num_cols:
+        summary_lines.append("\nNumeric Column Summary:")
+        desc = df[num_cols].describe().to_dict()
         for col in num_cols:
-            series = df[col].dropna()
-            summary.append(
-                f"{col}: min={series.min()}, max={series.max()}, mean={round(series.mean(),2)}"
+            info = desc[col]
+            summary_lines.append(
+                f"- {col}: min={info['min']}, max={info['max']}, mean={info['mean']:.2f}, std={info['std']:.2f}"
             )
 
-    # Simple categorical stats
-    cat_cols = df.select_dtypes(exclude=[np.number]).columns
-    for col in cat_cols:
-        top = df[col].mode()[0] if df[col].nunique() > 0 else "N/A"
-        summary.append(f"{col}: most common value is '{top}'.")
+        # Correlation matrix (rounded)
+        corr = df[num_cols].corr().round(3)
+        summary_lines.append("\nCorrelations:")
+        for c1 in num_cols:
+            for c2 in num_cols:
+                if c1 != c2:
+                    summary_lines.append(f"- {c1} vs {c2}: {corr.loc[c1, c2]}")
 
-    return "\n".join(summary)
+    # Categorical summaries
+    cat_cols = df.select_dtypes(exclude=[np.number]).columns
+    if cat_cols:
+        summary_lines.append("\nCategorical Columns Summary:")
+        for col in cat_cols:
+            counts = df[col].value_counts().head(5)
+            summary_lines.append(f"- {col}: top values → {dict(counts)}")
+
+    # Sample rows
+    summary_lines.append("\nSample rows:")
+    summary_lines.append(df.head(5).to_string())
+
+    return "\n".join(summary_lines)
 
 # -----------------------------------------------------
 # Chat With This Dataset (AI Chatbot)
@@ -281,22 +301,27 @@ if user_question:
         dataset_summary = summarize_dataframe_for_ai(df)
 
         prompt = f"""
-You are a helpful data assistant who answers questions in very simple English.
+You are a helpful data analyst. 
+Answer questions about this dataset using simple English, but with deeper reasoning.
 
-RULES:
-- You must answer ONLY using the dataset summary and context below.
-- If the answer is not directly supported by the data, say you are not sure.
-- Keep your answers SHORT, CLEAR, and BEGINNER-FRIENDLY.
-- Do NOT invent fake numbers not shown in the summary.
+Rules:
+- Use the dataset summary below.
+- Think step-by-step.
+- Use trends, correlations, category patterns, and outliers.
+- If user asks for analysis, give it.
+- If user asks for suggestions (e.g., what plot to use), give them.
+- If something is unclear, politely say so.
+- Keep answers short but meaningful, not just basic facts.
 
-DATASET SUMMARY:
+Here is the dataset summary:
 {dataset_summary}
 
-USER QUESTION:
+User question:
 {user_question}
 
-Now answer in 4–6 short bullet points.
+Now give a clear, helpful answer.
 """
+
 
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
