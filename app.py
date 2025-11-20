@@ -257,7 +257,7 @@ def summarize_dataframe_for_ai(df):
 
     # Numeric summaries
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if num_cols:
+    if len(num_cols) > 0:
         summary_lines.append("\nNumeric Column Summary:")
         desc = df[num_cols].describe().to_dict()
         for col in num_cols:
@@ -266,7 +266,7 @@ def summarize_dataframe_for_ai(df):
                 f"- {col}: min={info['min']}, max={info['max']}, mean={info['mean']:.2f}, std={info['std']:.2f}"
             )
 
-        # Correlation matrix (rounded)
+        # Correlations (rounded)
         corr = df[num_cols].corr().round(3)
         summary_lines.append("\nCorrelations:")
         for c1 in num_cols:
@@ -276,7 +276,7 @@ def summarize_dataframe_for_ai(df):
 
     # Categorical summaries
     cat_cols = df.select_dtypes(exclude=[np.number]).columns
-    if cat_cols:
+    if len(cat_cols) > 0:
         summary_lines.append("\nCategorical Columns Summary:")
         for col in cat_cols:
             counts = df[col].value_counts().head(5)
@@ -287,6 +287,7 @@ def summarize_dataframe_for_ai(df):
     summary_lines.append(df.head(5).to_string())
 
     return "\n".join(summary_lines)
+
 
 # -----------------------------------------------------
 # Chat With This Dataset (AI Chatbot)
