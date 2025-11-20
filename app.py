@@ -140,13 +140,15 @@ Here is a small sample of the dataset:
 """
 
     response = client.chat.completions.create(
-        model="mixtral-8x7b-32768",
-        messages=[
-            {"role": "system", "content": "You explain things in simple English."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=250,
-        temperature=0.4
+    model="llama-3.1-8b-instant",
+    messages=[
+        {"role": "system", "content": "You explain things in simple English."},
+        {"role": "user", "content": prompt}
+    ],
+    max_tokens=250,
+    temperature=0.4
+)
+
     )
 
     output = response.choices[0].message["content"]
