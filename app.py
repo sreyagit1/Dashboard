@@ -225,4 +225,15 @@ elif plot_type == "Correlation Heatmap":
         sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax)
         st.pyplot(fig)
 
-        with st
+        with st.expander("Explain this plot"):
+            explanation = generate_plot_explanation(
+                client,
+                "llama-3.1-8b-instant",
+                "Heatmap",
+                df
+            )
+            for line in explanation:
+                st.markdown(f"- {line.strip()}")
+    else:
+        st.warning("Not enough numeric columns to generate a heatmap.")
+
