@@ -236,4 +236,48 @@ elif plot_type == "Correlation Heatmap":
                 st.markdown(f"- {line.strip()}")
     else:
         st.warning("Not enough numeric columns to generate a heatmap.")
+# -----------------------------------------------------
+# Chat With This Dataset (AI Chatbot)
+# -----------------------------------------------------
+st.subheader("💬 Chat With This Dataset")
+
+user_question = st.text_input("Ask a question about your dataset:")
+
+if user_question:
+    with st.spinner("Thinking..."):
+        
+        dataset_summary = summarize_dataframe_for_ai(df)
+
+        prompt = f"""
+You are a helpful data assistant who answers questions in very simple English.
+
+RULES:
+- You must answer ONLY using the dataset summary and context below.
+- If the answer is not directly supported by the data, say you are not sure.
+- Keep your answers SHORT, CLEAR, and BEGINNER-FRIENDLY.
+- Do NOT invent fake numbers not shown in the summary.
+
+DATASET SUMMARY:
+{dataset_summary}
+
+USER QUESTION:
+{user_question}
+
+Now answer in 4–6 short bullet points.
+"""
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "You explain data in simple English."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=200,
+            temperature=0.3
+        )
+
+        ai_answer = response.choices[0].message.content
+
+        st.markdown("### 🤖 Answer:")
+        st.write(ai_answer)
 
