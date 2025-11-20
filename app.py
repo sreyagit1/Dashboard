@@ -1,3 +1,5 @@
+# AI Dashboard Assistant (Groq Cloud Version) with Plot Explanations
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -24,12 +26,108 @@ if not api_key:
 client = Groq(api_key=api_key)
 
 # -----------------------------------------------------
+# Helper Functions for Plot Explanation
+# -----------------------------------------------------
+def _count_outliers_iqr(series):
+    series = series.dropna()
+    if len(series) < 4:
+        return 0
+    q1 = series.quantile(0.25)
+    q3 = series.quantile(0.75)
+    iqr = q3 - q1
+    if iqr == 0:
+        return 0
+    low_cut = q1 - 1.5 * iqr
+    high_cut = q3 + 1.5 * iqr
+    return int(((series < low_cut) | (series > high_cut)).sum())
+
+
+def generate_plot_explanation(client, model, plot_type, df, x_col=None, y_col=None, cat_col=None, numeric_col=None):
+    n_points = len(df)
+    context = f"Plot type: {plot_type}. Total data points: {n_points}.\n"
+
+    if plot_type == "Histogram":
+        series = df[numeric_col].dropna()
+        outliers = _count_outliers_iqr(series)
+        skewness = series.skew()
+        skew_desc = "fairly symmetric"
+        if skewness > 0.7:
+            skew_desc = "skewed right (long tail to the right)"
+        elif skewness < -0.7:
+            skew_desc = "skewed left (long tail to the left)"
+        elif abs(skewness) > 0.3:
+            skew_desc = "slightly skewed"
+        context += f"Column: {numeric_col}. Distribution appears {skew_desc}. Estimated outliers: {outliers}.\n"
+
+    elif plot_type == "Pie":
+        counts = df[cat_col].value_counts(dropna=True)
+        top_ratio = counts.iloc[0] / counts.sum() if len(counts) > 0 else 0
+        if top_ratio > 0.7:
+            dominance = "one category dominates"
+        elif top_ratio > 0.4:
+            dominance = "a few categories dominate"
+        else:
+            dominance = "fairly balanced categories"
+        context += f"Column: {cat_col}. {dominance}.\n"
+
+    elif plot_type == "Scatter":
+        pair = df[[x_col, y_col]].dropna()
+        corr_desc = "no clear trend"
+        if len(pair) >= 3:
+            corr = pair[x_col].corr(pair[y_col])
+            if not pd.isna(corr):
+                if abs(corr) > 0.6:
+                    corr_desc = "strong trend"
+                elif abs(corr) > 0.3:
+                    corr_desc = "moderate trend"
+                else:
+                    corr_desc = "weak or no trend"
+        context += f"X: {x_col}, Y: {y_col}. Trend: {corr_desc}. Possible few outliers.\n"
+
+    elif plot_type == "Box":
+        groups = df.groupby(cat_col)[numeric_col]
+        group_outliers = 0
+        for _, g in groups:
+            group_outliers += _count_outliers_iqr(g)
+        context += f"Numeric: {numeric_col} by category {cat_col}. Estimated outliers: {group_outliers}.\n"
+
+    elif plot_type == "Heatmap":
+        nums = df.select_dtypes(include=[np.number]).columns.tolist()
+        context += f"Correlations between numeric columns: {', '.join(nums[:6])}.\n"
+
+    prompt = f"""
+You are a friendly assistant who explains charts in very simple English.
+Task: Based on the context below, produce 3 to 6 short bullet points.
+Rules:
+- Very short sentences.
+- No technical words.
+- No exact numbers.
+- Mention things like outliers, trends, imbalance, unusual shapes.
+
+Context:
+{context}
+"""
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You explain charts in simple English."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=180,
+        temperature=0.35
+    )
+
+    explanation = response.choices[0].message.content
+    return explanation.splitlines()[:6]
+
+# -----------------------------------------------------
 # File Upload
 # -----------------------------------------------------
 uploaded_file = st.file_uploader("📂 Upload CSV", type=["csv"])
 
 if uploaded_file is None:
-    st.warning("⬆️ Please upload a CSV file to continue.")
+    st.warning("⬆️ Please upload a CSV to continue.")
     st.stop()
 
 df = pd.read_csv(uploaded_file)
@@ -56,7 +154,9 @@ plot_type = st.selectbox(
     ]
 )
 
-# Histogram
+# -----------------------------------------------------
+# Plot Logic + Explanation
+# -----------------------------------------------------
 if plot_type == "Histogram (Numeric)":
     if numeric_cols:
         col = st.selectbox("Numeric column:", numeric_cols)
@@ -64,10 +164,15 @@ if plot_type == "Histogram (Numeric)":
         ax.hist(df[col].dropna(), bins=20)
         ax.set_title(f"Distribution of {col}")
         st.pyplot(fig)
+
+        with st.expander("Explain this plot"):
+            explanation = generate_plot_explanation(client, "llama-3.1-8b-instant", "Histogram", df, numeric_col=col)
+            for line in explanation:
+                if line.strip():
+                    st.markdown(f"- {line.strip()}")
     else:
         st.warning("No numeric columns found.")
 
-# Pie Chart
 elif plot_type == "Pie Chart (Categorical)":
     if categorical_cols:
         col = st.selectbox("Categorical column:", categorical_cols)
@@ -75,10 +180,14 @@ elif plot_type == "Pie Chart (Categorical)":
         df[col].value_counts().head(6).plot.pie(autopct="%1.1f%%", ax=ax)
         ax.set_ylabel("")
         st.pyplot(fig)
+
+        with st.expander("Explain this plot"):
+            explanation = generate_plot_explanation(client, "llama-3.1-8b-instant", "Pie", df, cat_col=col)
+            for line in explanation:
+                st.markdown(f"- {line.strip()}")
     else:
         st.warning("No categorical columns found.")
 
-# Scatter Plot
 elif plot_type == "Scatter Plot":
     if len(numeric_cols) >= 2:
         x = st.selectbox("X-axis:", numeric_cols)
@@ -87,10 +196,14 @@ elif plot_type == "Scatter Plot":
         ax.scatter(df[x], df[y])
         ax.set_title(f"{x} vs {y}")
         st.pyplot(fig)
+
+        with st.expander("Explain this plot"):
+            explanation = generate_plot_explanation(client, "llama-3.1-8b-instant", "Scatter", df, x_col=x, y_col=y)
+            for line in explanation:
+                st.markdown(f"- {line.strip()}")
     else:
         st.warning("Need at least two numeric columns.")
 
-# Box Plot
 elif plot_type == "Box Plot":
     if numeric_cols and categorical_cols:
         num = st.selectbox("Numeric column:", numeric_cols)
@@ -98,59 +211,18 @@ elif plot_type == "Box Plot":
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.boxplot(x=cat, y=num, data=df, ax=ax)
         st.pyplot(fig)
+
+        with st.expander("Explain this plot"):
+            explanation = generate_plot_explanation(client, "llama-3.1-8b-instant", "Box", df, numeric_col=num, cat_col=cat)
+            for line in explanation:
+                st.markdown(f"- {line.strip()}")
     else:
         st.warning("Need both numeric and categorical columns.")
 
-# Heatmap
 elif plot_type == "Correlation Heatmap":
     if len(numeric_cols) > 1:
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax)
         st.pyplot(fig)
-    else:
-        st.warning("Not enough numeric columns.")
 
-# -----------------------------------------------------
-# Generative Insights (Groq Cloud - Simple English)
-# -----------------------------------------------------
-st.subheader("🧠 AI-Generated Insights (Simple English)")
-
-with st.spinner("Generating friendly insights..."):
-
-    sample = df.head(3).to_string()
-
-    prompt = f"""
-You are a helpful data assistant. Explain this dataset in very simple English so anyone can understand.
-
-Rules:
-- Do NOT copy numbers.
-- Do NOT repeat sample rows.
-- No technical jargon.
-- Very short sentences.
-- Focus only on common patterns.
-
-Format:
-1. One-sentence summary.
-2. 3–6 simple bullet points.
-3. One short caution.
-
-Here is a small sample of the dataset:
-{sample}
-"""
-
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": "You explain things in simple English."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=250,
-        temperature=0.4
-    )
-
-    # CHANGED THIS LINE — correct for Groq
-    output = response.choices[0].message.content
-
-st.markdown("### 🤖 Insights")
-st.write(output)
-
+        with st
