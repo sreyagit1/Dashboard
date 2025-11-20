@@ -236,6 +236,38 @@ elif plot_type == "Correlation Heatmap":
                 st.markdown(f"- {line.strip()}")
     else:
         st.warning("Not enough numeric columns to generate a heatmap.")
+
+
+def summarize_dataframe_for_ai(df):
+    summary = []
+
+    summary.append(f"The dataset has {df.shape[0]} rows and {df.shape[1]} columns.")
+
+    # Column names
+    summary.append("Columns: " + ", ".join(df.columns))
+
+    # Types
+    types = df.dtypes.astype(str).to_dict()
+    type_summary = ", ".join([f"{col} ({types[col]})" for col in df.columns])
+    summary.append("Column types: " + type_summary)
+
+    # Simple numeric stats
+    num_cols = df.select_dtypes(include=[np.number]).columns
+    if len(num_cols) > 0:
+        for col in num_cols:
+            series = df[col].dropna()
+            summary.append(
+                f"{col}: min={series.min()}, max={series.max()}, mean={round(series.mean(),2)}"
+            )
+
+    # Simple categorical stats
+    cat_cols = df.select_dtypes(exclude=[np.number]).columns
+    for col in cat_cols:
+        top = df[col].mode()[0] if df[col].nunique() > 0 else "N/A"
+        summary.append(f"{col}: most common value is '{top}'.")
+
+    return "\n".join(summary)
+
 # -----------------------------------------------------
 # Chat With This Dataset (AI Chatbot)
 # -----------------------------------------------------
